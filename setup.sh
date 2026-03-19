@@ -179,12 +179,26 @@ else
   echo "No claude-mem database found (skipping import)."
 fi
 
+# --- Install as system-level skill ---
+SKILLS_DIR="$HOME/.claude/skills"
+SKILL_LINK="$SKILLS_DIR/memory-os"
+
+if [ -L "$SKILL_LINK" ] || [ -d "$SKILL_LINK" ]; then
+  echo "Skill 'memory-os' already installed at $SKILL_LINK"
+else
+  mkdir -p "$SKILLS_DIR"
+  ln -sfn "$SCRIPT_DIR" "$SKILL_LINK"
+  echo "Installed memory-os as system-level skill at $SKILL_LINK"
+fi
+
 echo ""
 echo "=== Claude Memory OS is ready ==="
 echo ""
-echo "  MCP server: configured in ~/.claude.json"
-echo "  Auto-capture hooks: configured in ~/.claude/settings.json"
-echo "  Database: ~/.claude-memory-os/memories.db (created on first use)"
+echo "  MCP server:    configured in ~/.claude.json"
+echo "  Hooks:         configured in ~/.claude/settings.json (PostToolUse + Stop)"
+echo "  Skill:         installed at ~/.claude/skills/memory-os (auto-triggers on recall/remember)"
+echo "  Database:      ~/.claude-memory-os/memories.db (created on first use)"
+echo "  Config:        $(realpath "$SCRIPT_DIR/config.json")"
 echo ""
 echo "Optional: Set OBSIDIAN_VAULT_PATH in ~/.claude.json to enable Obsidian sync:"
 echo "  \"env\": { \"OBSIDIAN_VAULT_PATH\": \"/path/to/your/vault\" }"
