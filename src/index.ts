@@ -12,6 +12,7 @@ import {
   deleteMemory,
 } from "./memory.js";
 import { syncFromObsidian, syncToObsidian, OBSIDIAN_VAULT } from "./sync.js";
+import { importClaudeMem, CLAUDE_MEM_DB } from "./import-claude-mem.js";
 
 const db = getDb();
 const server = new McpServer({
@@ -245,6 +246,37 @@ server.tool(
         {
           type: "text" as const,
           text: `Obsidian sync complete:\n${results.join("\n")}`,
+        },
+      ],
+    };
+  }
+);
+
+// --- Tool: memory_import_claude_mem ---
+server.tool(
+  "memory_import_claude_mem",
+  "Import observations from claude-mem plugin (at ~/.claude-mem/claude-mem.db) into Memory OS. Migrates all decisions, discoveries, bugfixes, features, refactors, and changes with their metadata. Safe to run multiple times (deduplicates by content hash).",
+  {
+    limit: z.number().optional().describe("Max observations to import (default: all)"),
+    project: z.string().optional().describe("Only import from this project"),
+    since: z.string().optional().describe("Only import after this ISO date (e.g. 2026-03-01)"),
+  },
+  async (args) => {
+    const result = importClaudeMem(db, {
+      limit: args.limit,
+      project: args.project,
+      since: args.since,
+    });
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `claude-mem import complete:
+  Source: ${CLAUDE_MEM_DB}
+  Total observations found: ${result.total}
+  Imported: ${result.imported}
+  Skipped (duplicate/empty): ${result.skipped}
+  Errors: ${result.errors.length}${result.errors.length > 0 ? "\n  " + result.errors.slice(0, 5).join("\n  ") : ""}`,
         },
       ],
     };
