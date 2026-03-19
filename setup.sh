@@ -123,6 +123,62 @@ HOOKEOF
   echo "  Created ~/.claude/settings.json"
 fi
 
+# --- Auto-import claude-mem observations ---
+CLAUDE_MEM_DB="$HOME/.claude-mem/claude-mem.db"
+if [ -f "$CLAUDE_MEM_DB" ]; then
+  MEM_COUNT=$(sqlite3 "$CLAUDE_MEM_DB" "SELECT COUNT(*) FROM observations" 2>/dev/null || echo "0")
+  if [ "$MEM_COUNT" -gt 0 ]; then
+    echo ""
+    echo "Found claude-mem database with $MEM_COUNT observations."
+    echo "Importing into Memory OS..."
+    # Start the MCP server briefly to trigger DB creation, then use sqlite3 directly
+    node "${SCRIPT_DIR}/dist/index.js" &
+    MCP_PID=$!
+    sleep 1
+    kill $MCP_PID 2>/dev/null
+    wait $MCP_PID 2>/dev/null
+
+    MEMORY_DB="$HOME/.claude-memory-os/memories.db"
+    if [ -f "$MEMORY_DB" ]; then
+      IMPORTED=0
+      SKIPPED=0
+      while IFS='|' read -r id type title subtitle narrative text facts concepts project created_at; do
+        # Build content from fields
+        CONTENT=""
+        [ -n "$title" ] && CONTENT="# $title"
+        [ -n "$subtitle" ] && CONTENT="$CONTENT\n$subtitle"
+        [ -n "$narrative" ] && CONTENT="$CONTENT\n$narrative"
+        [ -n "$facts" ] && CONTENT="$CONTENT\nFacts: $facts"
+
+        if [ -z "$CONTENT" ]; then
+          SKIPPED=$((SKIPPED + 1))
+          continue
+        fi
+
+        # Map type to category
+        case "$type" in
+          decision|discovery) CATEGORY="semantic" ;;
+          *) CATEGORY="episodic" ;;
+        esac
+
+        HASH=$(echo -n "$CONTENT" | shasum -a 256 | cut -d' ' -f1)
+        sqlite3 "$MEMORY_DB" "
+          INSERT OR IGNORE INTO memories (content, category, tags, source, project, agent, confidence, content_hash, created_at, updated_at)
+          VALUES ('$(echo "$CONTENT" | sed "s/'/''/g")', '$CATEGORY', '$type,$concepts', 'claude-mem:$id', '$project', 'claude', 1.0, '$HASH', '$created_at', '$created_at');
+        " 2>/dev/null
+        if [ $? -eq 0 ]; then
+          IMPORTED=$((IMPORTED + 1))
+        else
+          SKIPPED=$((SKIPPED + 1))
+        fi
+      done < <(sqlite3 -separator '|' "$CLAUDE_MEM_DB" "SELECT id, type, title, subtitle, narrative, text, facts, concepts, project, created_at FROM observations ORDER BY created_at_epoch ASC" 2>/dev/null)
+      echo "  Imported: $IMPORTED, Skipped: $SKIPPED"
+    fi
+  fi
+else
+  echo "No claude-mem database found (skipping import)."
+fi
+
 echo ""
 echo "=== Claude Memory OS is ready ==="
 echo ""
